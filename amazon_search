@@ -1,0 +1,85 @@
+#!/usr/bin/ruby -w
+#
+
+
+require 'amazon/search'
+
+include Amazon::Search
+
+
+def each_book(toplevel_dir)
+    Dir[toplevel_dir + "/**/*.*"].each do |path|
+        next if File.directory? path
+        next unless [".pdf", ".chm"].include?(File.extname(path))
+        
+        yield path
+    end
+end
+
+
+def normalize_title(title)
+    title = title.gsub(/2nd/i     , "")
+    title = title.gsub(/3rd/i     , "")
+    title = title.gsub(/\dth/i    , "")
+    title = title.gsub(/,/i       , "")
+    title = title.gsub(/TCP-IP/i  , "TCP/IP")
+    title = title.gsub(/vol /i    , "volume ")
+    title = title.gsub(/edition/i , "")
+    title = title.gsub(/C Sharp/i , "C#")
+
+    title.strip
+end
+
+
+def colorize_words(text, words, color)
+    text.split(/ /).map do |text_word| 
+        if words.find { |word| text_word.gsub(/:/, "").downcase == word.downcase }
+            color + text_word + "\e[0m"
+        else
+            text_word
+        end
+    end.join(" ")
+end
+
+
+def amazon_search(title)
+    req = Request.new "10XXKVYRS9C4CC4BDEG2"
+    req.keyword_search(title, "books").products
+end
+
+
+def print_results(title, products, exception)
+    puts " - \e[0;32m" + title + "\e[0m"
+
+    if exception
+        puts "   [ERROR] " + exception
+    else
+        products.each do |product|
+            product_name = colorize_words(product.product_name[0..69], title.split, "\e[0;31m")
+            puts "   #{product.average_customer_rating}\t %s" % product_name
+        end
+    end
+
+    puts
+end
+
+
+if ARGV.length != 1
+    puts "Usage: amazon_search <directory>"
+    exit
+end
+
+toplevel_dir = ARGV[0]
+each_book(toplevel_dir) do |path|
+    title = File.basename(path, ".*")
+
+    begin
+        products = amazon_search(normalize_title(title))
+    rescue 
+        products = []
+        exception = $!
+    end
+
+    print_results title, products, exception
+end
+

@@ -1,0 +1,75 @@
+#!/bin/bash
+#distclean
+
+case $1 in
+   -p | --pretend)
+      remove="no"
+      ;;
+   -a | --ask)
+      remove="ask"
+      ;;
+   "")
+      remove="yes"
+      ;;
+   -h | --help | *)
+      echo -e "distclean : prune stale distfiles"
+      echo -e ""
+      echo -e "Usage:"
+      echo -e "distclean -p|--pretend\t: do not delete"
+      echo -e "distclean -a|--ask    \t: ask for confirmation"
+      echo -e "distclean -h|--help   \t: this help"
+      echo -e "distclean             \t: clean all stale distfiles"
+      echo -e ""
+      echo -e ""
+      exit
+      ;;
+esac
+   
+#db and distfile settings
+echo "Reading Portage environment..."
+VDB_PATH=$(portageq vdb_path)
+DISTDIR=$(portageq distdir)
+
+#if Control-C pressed restore distfile perms
+function restoreperm(){
+   echo -e "\n\nExiting due to signal.\n\n"
+   chmod -t $DISTDIR/*
+   exit 1
+}
+trap restoreperm SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL
+
+#mark all as stale
+chmod +t $DISTDIR/*
+
+#reverse perms for current package distfiles
+echo "Reading package database..."
+ENV=`find $VDB_PATH -type f -iname 'environment.bz2'`
+for x in $ENV ; do
+   KEEP=`bzcat ${x} | sed -n '1s/A=//gp'`
+   for y in ${KEEP//\'/} ; do
+      [ -e "${DISTDIR}/${y}" ] && chmod -t ${DISTDIR}/${y}
+   done
+done
+
+#do the stuff
+case $remove in
+   yes)
+      find $DISTDIR -perm +1000 -type f -maxdepth 1 \
+      -printf "\\033[32m<<\\033[00m  %f  \n" \
+      -exec rm -f  \{\} \;
+      echo -e "\nDone.\n\n"
+   ;;
+   ask)
+      find $DISTDIR -perm +1000 -type f -maxdepth 1 \
+      -printf "[ \\033[32m%6k kB\\033[00m ] " \
+      -ok rm -f  \{\} \;
+      echo -e "\nDone.\n\n"
+   ;;
+   no | *)
+      find $DISTDIR -perm +1000 -type f -maxdepth 1 \
+      -printf "[ \\033[32m%6k kB\\033[00m ] %f\n"
+   ;;
+esac
+
+#restore remaining file perms
+chmod -t $DISTDIR/* 

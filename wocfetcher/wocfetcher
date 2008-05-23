@@ -1,0 +1,252 @@
+#! /usr/bin/env ruby
+#
+# pureza, 2007
+
+require 'net/http'
+require 'net/https'
+require 'pathname'
+require 'yaml'
+
+require 'WocDiscipline'
+require 'WocFile'
+
+URL = 'www.dei.uc.pt'
+HISTORY_FILE = "woc_history.yaml"
+CONFIG_FILE = "config.yaml"
+
+$VERBOSE = nil
+$cookie = nil
+
+#
+# Performs authentication at the WOC site
+#
+def woc_login(username, password)
+
+  def get_check_value(data)
+    data =~ /<input type="hidden" name="checkValue" value="(.*?)">/n
+    $1
+  end
+
+  path = '/weboncampus/index.jsp'
+
+  http = Net::HTTP.new(URL, 443)
+  http.use_ssl = true
+
+  response, data = http.get(path)
+  $cookie = response.response['set-cookie'].split(";")[0]
+
+  check_value = get_check_value(data)
+  data =  "password=#{password}&username=#{username}&checkValue=#{check_value}"
+
+  headers = {
+    'Host' => "www.dei.uc.pt",
+    'Cookie'   => $cookie,
+    'Content-Type' => 'application/x-www-form-urlencoded'
+  } 
+
+  response, data = http.post('/weboncampus/2moduledefaultlogin.do', data, headers)
+
+  return get_check_value(data).nil?
+end
+
+
+#
+# Download a given file to some destination
+#
+def download(file, destination)
+  file_path = File.join(destination, file.name)
+
+  http = Net::HTTP.new(URL, 443)
+  http.use_ssl = true
+
+  response, data = http.get(file.url, {'Cookie' => $cookie})
+
+  # Get the file extension
+  response.response['content-disposition'].scan(/filename=\"(.*?)\"/) do |file_name|
+    file_path << File.extname(file_name[0])
+  end
+
+  file = File.new(file_path, "w")
+  file.write(data)
+  file.close
+end
+
+
+#
+# Load the configuration
+#
+def load_configuration
+  file = File.open(CONFIG_FILE)
+  courses_table, courses_to_check = YAML::load_stream(file).documents
+  file.close
+
+  return courses_table, courses_to_check
+end
+
+
+#
+# Load the YAML file with the download history
+#
+def load_download_history
+  if File.exists?(HISTORY_FILE)
+    YAML::load(File.open(HISTORY_FILE))
+  else
+    {}
+  end
+end
+
+
+#
+# Store the download history into an YAML file
+#
+def store_download_history()
+  file = File.open(HISTORY_FILE, "w")
+  file.write $download_history.to_yaml
+  file.close
+end
+
+
+#
+# Is this the first time we see the given file?
+#
+def is_new(file)
+  !$download_history.has_key?(file.id)
+end
+
+def is_modified(file)
+  $download_history.has_key?(file.id) && $download_history[file.id] != file.to_md5
+end
+
+
+#
+# Processes a course, i.e., checks for new contents and downloads them
+#
+def get_resources(name)
+  course = WocDiscipline.new(name)
+  resources_found = Hash.new() { |hash, key| hash[key] = [] }
+ 
+  # Material
+  course.each_material do |file|
+    resources_found[:material] << file
+  end
+
+  # Work
+  course.each_project do |file|
+    resources_found[:project] << file
+  end
+
+  # Assessment
+  course.each_assessment do |file|
+    resources_found[:assessment] << file
+  end
+
+  resources_found
+end
+
+
+#
+# Reads username and password
+#
+def read_login_data
+  print "Username: "
+  username = gets.strip
+
+  print "Password: "
+  system "stty -echo"
+  password = gets.strip
+  system "stty echo"
+  puts
+
+  return username, password
+end
+
+
+username, password = read_login_data()
+
+# Load configuration
+COURSES_TABLE, COURSES_TO_CHECK = load_configuration()
+
+# Load download history
+$download_history = load_download_history()
+
+# authenticate myself (otherwise WOC might hide contents...)
+unless woc_login(username, password)
+  puts "WARNING: Login failed!"
+end
+
+all_resources = Hash.new() { |hash, key| hash[key] = [] }
+
+# For each course, get the list of existing resources
+for name in COURSES_TO_CHECK
+  begin
+    all_resources[name] = get_resources(name)
+  rescue
+    puts "ERROR: Unknown course '#{name}'"
+  end
+end
+
+
+# Now, print all the resources
+for name in COURSES_TO_CHECK
+  next unless all_resources.has_key? name
+
+  if all_resources[name].empty?
+    puts "\n > " + name + ": No resources found.\n"
+  else
+    puts "\n > " + name + "\n"
+  end
+
+  for key in all_resources[name].keys
+    resources = all_resources[name][key]
+    puts "\n - #{key.to_s.upcase}:\n\n" unless resources.empty?
+
+    for file in resources
+      if is_new(file)
+        printf("\e[0;34m   %-40s\t %-20s\t*\e[0m\n", file.name, file.date)
+      elsif is_modified(file)
+        printf("\e[0;31m   %-40s\t %-20s\tM\e[0m\n", file.name, file.date)
+      else
+        printf("   %-40s\t %-20s\n", file.name, file.date)
+      end
+    end
+  end
+end
+
+puts
+
+# Finally, download the resources
+for name in COURSES_TO_CHECK
+  next unless all_resources.has_key? name
+
+  for key in all_resources[name].keys
+
+    # Create necessary directories if they don't exist
+    begin
+      Dir.mkdir(name)
+    rescue
+    end
+
+    begin
+      Dir.mkdir(File.join(name, key.to_s))
+    rescue
+    end
+
+    resources = all_resources[name][key]
+    for file in resources
+      # Download if new or modified
+      if is_new(file) || is_modified(file)
+        printf(" [F] %-5s / %-10s - %-40s ", name, key, file.name)
+        download(file, File.join(name, key.to_s))
+        printf("\t OK\n")
+        
+        # Write to history
+        $download_history[file.id] = file.to_md5
+      end
+    end
+  end
+end
+
+# Save download history
+store_download_history()
+
+

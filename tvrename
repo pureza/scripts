@@ -1,0 +1,73 @@
+#! /usr/bin/env ruby1.8
+#
+# Usage: tvrename [-a] <season>
+#
+# O ficheiro com os nomes dos episodios deve estar na mesma pasta dos videos
+#
+
+require 'optparse'
+
+# Devolve a season e o numero do episodio
+def extract_episode_info(ep, season = nil)
+  ep_number_regexps = [/(\d+)\.?e(\d+)/i, /(\d+)x(\d+)/i, /(\d)(\d\d)/i]
+  ep_number_regexps = [/(\d\d)/i] if season
+  
+  for regexp in ep_number_regexps
+    break if ep =~ regexp
+  end
+
+  { :season => season || $1.to_i, :number => ($2 || $1).to_i }
+end
+
+def number(ep)
+  extract_episode_info(ep, $DEFAULT_SEASON)[:number]
+end
+
+def season(ep)
+  extract_episode_info(ep, $DEFAULT_SEASON)[:season]
+end
+
+apply = false
+
+opts = OptionParser.new do |opts|
+  opts.on("-a") do |s|
+     apply = true
+  end
+
+  opts.on("-s SEASON") do |s|
+     $DEFAULT_SEASON = s.to_i
+  end
+end
+
+opts.parse!(ARGV)
+
+options = ARGV[0] || ""
+
+videos = Dir["*.avi"].inject([]) { |n, m| n[number(m)] = m; n }
+subtitles = (Dir["*.srt"] + Dir["*.sub"]).inject([]) { |n, m| n[number(m)] = m; n }
+episodes = IO.readlines("episodes").map { |line| line.split("\t")[1].strip.delete("?") }
+max_fname_length = videos.compact.max { |a, b| a.length <=> b.length }.length
+
+for file in videos + subtitles
+  next if file.nil?
+
+  begin
+    new_name = "#{season file}x%02d - #{episodes[number(file) - 1].strip.capitalize}#{File.extname(file)}" % (number(file))
+  rescue Exception => ex
+    puts "Error when renaming file #{file}: " + ex
+    exit
+  end
+
+  if !apply
+    puts "%-#{max_fname_length + 7}s #{new_name}" % file
+  else
+    begin
+      File.rename(file, new_name)
+    rescue
+    end
+  end     
+end
+
+
+
+

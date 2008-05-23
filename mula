@@ -1,0 +1,121 @@
+#! /usr/bin/ruby
+# Pequeno script que permite controlar o aMule automaticamente de modo a
+# aproveitar as happy-hours da netcabo.
+# Usa o amulecmd.
+
+#
+# Controlador do aMule
+#
+class AmuleController
+
+public
+
+    #
+    # Devolve o servidor actual
+    #
+    def server
+        do_command('Stats') =~ /Connected to (.*) \[[\d\.:]*\] with/
+	$1
+    end
+
+    #
+    # Conecta-se a um determinado servidor
+    #
+    def connect(server)
+    	ip = get_server_ip(server)
+	return false unless ip
+  	
+        puts " - Ligando a #{server}..."
+	do_command("Connect #{get_server_ip(server)}")
+
+	sleep(10) while connecting?
+	connected?
+    end
+
+    #
+    # Verifica se o programa esta conectado
+    #
+    def connected?
+        server
+    end
+
+    #
+    # Verifica se o programa esta ainda a conectar-se
+    #
+    def connecting?
+        do_command('Stats') =~ /Now connecting/
+    end
+	
+    #
+    # Tenta conectar a um conjunto de servidores, ate conseguir ligar a um 
+    # deles
+    #
+    def try_servers(servers)
+        servers.each { |s| break if connect(s) }
+    end
+
+    #
+    # Devolve o IP de um servidor
+    #
+    def get_server_ip(server)
+	do_command('Servers') =~ /\[([\d\.\:]+)\].*#{server}.*/
+	$1
+    end
+
+    #
+    # Liga o filtro de ips
+    #
+    def enable_ip_filter
+ 	do_command('SetIpFilter on')
+    end
+    
+    #
+    # Desliga o filtro de ips
+    #
+    def disable_ip_filter
+ 	do_command('SetIpFilter off')
+    end
+
+private
+   
+    # 
+    # Executa o comando pedido
+    #
+    def do_command(cmd)
+	`amulecmd -c "#{cmd}" -P fil259874`
+    end
+end
+
+#
+# Classifica um servidor como nacional ou internacional
+#
+def server_category(servers, amule_server)
+    servers.each do |k, v|
+        return k if v.find { |e| amule_server.include? e }
+    end
+end
+
+# Lista de servidores nacionais e internacionais
+servers = 
+{ 	
+    'international' => [ "Razorback", "DonkeyServer" ],
+    'national'	    => [ "Tejo", "Sado" ]
+}
+
+
+# Bloco principal
+
+amule = AmuleController.new
+
+while true 
+    time = Time.now
+    if ((1 .. 6) === time.hour) # Happy-hours!
+	amule.disable_ip_filter
+    else
+#    	sleep 60
+#	amule.connect("Sado")	
+#	break
+	amule.enable_ip_filter
+    end
+    sleep 60
+end

@@ -1,0 +1,51 @@
+#! /usr/bin/env ruby
+
+require 'sqlite3'
+
+if ARGV.length < 2
+    puts "Usage: ./ratings <database file> <imdb ratings.list file"
+    exit
+end
+
+DATABASE_FILE = ARGV[0]
+RATINGS_FILE = ARGV[1]
+
+def parse_ratings_file(file)
+    result = {}
+    IO.readlines(file).grep(/^\s+\d+\s+\d+\s+(\d\.\d)\s+(.*?)\s+\((\d+)\)$/) { |line| result[$2 + $3] = [$3.to_i, $1.to_f] }	
+    result
+end
+
+
+imdb_movies = parse_ratings_file(RATINGS_FILE)
+filtered_movies = []
+
+db = SQLite3::Database.new(DATABASE_FILE)
+db.execute("SELECT title, year FROM movies WHERE seen = 0;") do |movie|
+
+    if movie[1].nil? || movie[1].to_i == 0
+        puts "Filme '#{movie[0]}' nao tem ano!"
+        next
+    end
+
+    year, rating = imdb_movies[movie[0] + movie[1]]
+
+    if year != movie[1].to_i
+    	puts "Anos nao coincidem! Filme '#{movie[0]}' Ano IMDB: #{year} Ano BD #{movie[1]}" unless year.nil?
+	next
+    end
+    
+    if rating.nil?
+    	puts "Rating nao encontrado para o filme '#{movie[0]}'"
+    	next
+    end
+
+    filtered_movies << [movie[0], rating]
+end
+
+puts
+
+filtered_movies.sort! { |a, b| a[1] <=> b[1] }
+for movie, rating in filtered_movies
+    printf "%-90s %.2f\n", movie, rating
+end
