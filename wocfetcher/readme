@@ -39,3 +39,6 @@
    - sd
    - iia
    - pgi
+
+   Finally, set the name of the directory where the files will be downloaded
+   to in the last line of the configuration file.
