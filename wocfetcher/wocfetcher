@@ -11,7 +11,7 @@ require 'fileutils'
 require 'WocDiscipline'
 require 'WocFile'
 
-URL = 'www.dei.uc.pt'
+URL = 'woc.dei.uc.pt'
 HISTORY_FILE = "woc_history.yaml"
 CONFIG_FILE = "config.yaml"
 
