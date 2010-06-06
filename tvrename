@@ -43,9 +43,11 @@ opts.parse!(ARGV)
 
 options = ARGV[0] || ""
 
+#system(%q{sed -ni '1h;1!H;${;g;s/\([0-9]\+\)\n[^\n]*\n/\1\t/g;p;}' episodes})
+
 videos = Dir["*.avi"].inject([]) { |n, m| n[number(m)] = m; n }
 subtitles = (Dir["*.srt"] + Dir["*.sub"]).inject([]) { |n, m| n[number(m)] = m; n }
-episodes = IO.readlines("episodes").map { |line| line.split("\t")[1].strip.delete("?") }
+episodes = IO.readlines("episodes").map { |line| line.split("\t")[1].strip.delete("?") }.reverse
 max_fname_length = videos.compact.max { |a, b| a.length <=> b.length }.length
 
 for file in videos + subtitles

@@ -1,0 +1,14 @@
+# flac2mp3
+
+for file in *.flac
+do
+  flac -d "${file}"
+done
+
+for file in *.wav
+do
+  lame -b 320 "${file}"
+  rm "${file}"
+done
+
+
